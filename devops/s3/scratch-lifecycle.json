@@ -1,0 +1,11 @@
+{
+  "Rules": [
+    {
+      "ID": "expire-scratch-after-seven-days",
+      "Status": "Enabled",
+      "Filter": {"Prefix": ""},
+      "Expiration": {"Days": 7},
+      "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 7}
+    }
+  ]
+}

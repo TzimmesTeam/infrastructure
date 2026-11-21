@@ -1,0 +1,48 @@
+x-worker: &worker
+  profiles: [cashflow]
+  depends_on:
+    control-plane:
+      condition: service_healthy
+  stop_grace_period: 30s
+  restart: on-failure
+
+x-worker-env: &worker-env
+  NATS_URL: nats://nats:4222
+  NATS_STREAM_NAME: CONTROL_PLANE
+  CONTROL_PLANE_URL: http://control-plane:8089
+  S3_ENDPOINT: http://s3:8333
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:-zimmes-local}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:-zimmes-local-s3-secret}
+  S3_USE_PATH_STYLE: "true"
+  S3_LAKE_BUCKET: ${S3_CURATED_BUCKET:-irrbb-curated-local}
+  S3_REPORT_BUCKET: ${S3_ARTIFACTS_BUCKET:-irrbb-artifacts-local}
+  S3_QUARANTINE_BUCKET: ${S3_QUARANTINE_BUCKET:-irrbb-quarantine-local}
+
+services:
+  cashflow-worker:
+    <<: *worker
+    image: ${CASHFLOW_WORKER_IMAGE:-${ZIMMES_IMAGE_NAMESPACE:-ghcr.io/tzimmesteam}/cashflow-worker:${ZIMMES_IMAGE_TAG:-latest}}
+    environment:
+      <<: *worker-env
+      NATS_TASK_SUBJECT: calc.cashflow.tasks
+      NATS_EVENT_SUBJECT: calc.cashflow.events
+      NATS_DURABLE_NAME: cashflow-workers
+
+  pv-worker:
+    <<: *worker
+    image: ${PV_WORKER_IMAGE:-${ZIMMES_IMAGE_NAMESPACE:-ghcr.io/tzimmesteam}/pv-worker:${ZIMMES_IMAGE_TAG:-latest}}
+    environment:
+      <<: *worker-env
+      NATS_TASK_SUBJECT: calc.pv.tasks
+      NATS_EVENT_SUBJECT: calc.pv.events
+      NATS_DURABLE_NAME: pv-workers
+
+  aggregator:
+    <<: *worker
+    image: ${AGGREGATOR_IMAGE:-${ZIMMES_IMAGE_NAMESPACE:-ghcr.io/tzimmesteam}/aggregator:${ZIMMES_IMAGE_TAG:-latest}}
+    environment:
+      <<: *worker-env
+      NATS_TASK_SUBJECT: calc.aggregate.tasks
+      NATS_EVENT_SUBJECT: calc.aggregate.events
+      NATS_DURABLE_NAME: aggregator-workers

@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-docker.io/library/postgres:18.7-alpine}
+    environment: &postgres-env
+      POSTGRES_DB: ${POSTGRES_DB:-control_plane}
+      POSTGRES_USER: ${POSTGRES_USER:-zimmes}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zimmes-local-postgres}
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # PostgreSQL 18+ stores versioned PGDATA under /var/lib/postgresql.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: on-failure
+
+  postgres-migrate:
+    image: ${POSTGRES_IMAGE:-docker.io/library/postgres:18.7-alpine}
+    environment: *postgres-env
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - >-
+        PGPASSWORD="$$POSTGRES_PASSWORD" exec psql
+        --host=postgres --username="$$POSTGRES_USER" --dbname="$$POSTGRES_DB"
+        --set=ON_ERROR_STOP=1 --file=/migrations/0001_simple_state_machine.sql
+    volumes:
+      - type: bind
+        source: ./migrations/0001_simple_state_machine.sql
+        target: /migrations/0001_simple_state_machine.sql
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  postgres-data:

@@ -1,0 +1,95 @@
+services:
+  data-prep:
+    image: ${DATA_PREP_IMAGE:-${ZIMMES_IMAGE_NAMESPACE:-ghcr.io/tzimmesteam}/data-prep:${ZIMMES_IMAGE_TAG:-latest}}
+    command: [-config, /config/infrastructure.yml]
+    configs:
+      - source: data-prep-config
+        target: /config/infrastructure.yml
+    environment:
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-zimmes-local}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-zimmes-local-s3-secret}
+      S3_RAW_BUCKET: ${S3_RAW_BUCKET:-irrbb-raw-local}
+      S3_CURATED_BUCKET: ${S3_CURATED_BUCKET:-irrbb-curated-local}
+      S3_QUARANTINE_BUCKET: ${S3_QUARANTINE_BUCKET:-irrbb-quarantine-local}
+      SQS_QUEUE_URL: &queue-url http://localstack:4566/000000000000/data-prep-raw-events
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${DATA_PREP_PORT:-8080}:8080"
+    depends_on:
+      control-plane:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+    stop_grace_period: 30s
+    restart: on-failure
+
+  event-bridge:
+    image: ${EVENT_BRIDGE_IMAGE:-${ZIMMES_IMAGE_NAMESPACE:-ghcr.io/tzimmesteam}/event-bridge:${ZIMMES_IMAGE_TAG:-latest}}
+    environment:
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      SQS_ENDPOINT: http://localstack:4566
+      SQS_QUEUE_URL: *queue-url
+      S3_RAW_BUCKET: ${S3_RAW_BUCKET:-irrbb-raw-local}
+    depends_on:
+      localstack:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8080/health]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+    restart: on-failure
+
+  localstack:
+    image: ${LOCALSTACK_IMAGE:-docker.io/localstack/localstack:3.8}
+    environment:
+      SERVICES: sqs
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      SQS_ENDPOINT_STRATEGY: off
+      PERSISTENCE: "1"
+    volumes:
+      - type: bind
+        source: ./localstack/init.sh
+        target: /etc/localstack/init/ready.d/init.sh
+        read_only: true
+        bind:
+          create_host_path: false
+      - localstack-data:/var/lib/localstack
+    healthcheck:
+      test: [CMD-SHELL, awslocal sqs get-queue-url --queue-name data-prep-raw-events >/dev/null]
+      interval: 3s
+      timeout: 4s
+      retries: 40
+    restart: on-failure
+
+volumes:
+  localstack-data:
+
+configs:
+  data-prep-config:
+    content: |
+      env: local
+      startup_timeout: 30s
+      http:
+        port: 8080
+        shutdown_timeout: 15s
+      s3:
+        region: "${S3_REGION:-us-east-1}"
+        endpoint: http://s3:8333
+        use_path_style: true
+      sqs:
+        region: us-east-1
+        endpoint: http://localstack:4566
+        access_key_id: test
+        secret_access_key: test
+        wait_time_seconds: 20
+        visibility_timeout: 300
+        reconnect_delay: 2s
+      control_plane:
+        url: http://control-plane:8089/snapshots/prepared
+        timeout: 10s
+        max_attempts: 3
+        retry_delay: 1s

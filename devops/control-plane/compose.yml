@@ -1,0 +1,37 @@
+services:
+  control-plane:
+    image: ${CONTROL_PLANE_IMAGE:-${ZIMMES_IMAGE_NAMESPACE:-ghcr.io/tzimmesteam}/control-plane:${ZIMMES_IMAGE_TAG:-latest}}
+    environment:
+      DB_DSN: ${DB_DSN:-postgres://${POSTGRES_USER:-zimmes}:${POSTGRES_PASSWORD:-zimmes-local-postgres}@postgres:5432/${POSTGRES_DB:-control_plane}?sslmode=disable}
+      NATS_URL: nats://nats:4222
+      NATS_STREAM: CONTROL_PLANE
+      NATS_PREFIX: calc
+      S3_ENDPOINT: s3:8333
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-zimmes-local}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-zimmes-local-s3-secret}
+      S3_USE_SSL: "false"
+      S3_CURATED_BUCKET: ${S3_CURATED_BUCKET:-irrbb-curated-local}
+      S3_ARTIFACTS_BUCKET: ${S3_ARTIFACTS_BUCKET:-irrbb-artifacts-local}
+      S3_PREPARED_PREFIX: "source="
+      HTTP_PORT: "8089"
+      RUN_BATCH_SIZE: ${RUN_BATCH_SIZE:-10000}
+      RUN_DEFAULT_REPORT_DTTM: ${RUN_DEFAULT_REPORT_DTTM:-1970-01-01}
+      RUN_DEFAULT_CURVES_URI: ${RUN_DEFAULT_CURVES_URI:-s3://${S3_CURATED_BUCKET:-irrbb-curated-local}/curve_snapshots/default/curves.parquet}
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${CONTROL_PLANE_PORT:-8089}:8089"
+    depends_on:
+      postgres-migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+      s3-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8089/readyz]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
+    stop_grace_period: 30s
+    restart: on-failure

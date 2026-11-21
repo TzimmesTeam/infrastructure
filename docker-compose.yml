@@ -1,0 +1,9 @@
+name: zimmes
+
+include:
+  - path: ./devops/postgres/compose.yml
+  - path: ./devops/nats/compose.yml
+  - path: ./devops/s3/compose.yml
+  - path: ./devops/control-plane/compose.yml
+  - path: ./devops/data-prep/compose.yml
+  - path: ./devops/cashflow/compose.yml
